@@ -7,5 +7,5 @@ dependencies:
   # Version épinglée : c'est elle qui rend un déploiement reproductible. Elle est
   # réécrite par la CI quand le dépôt applicatif signale une nouvelle livraison.
   - name: mesure-impact
-    version: 0.0.0-sha.8118da16
+    version: 0.0.0-sha.6f3afb69
     repository: oci://ghcr.io/socialgouv/mesure-impact/charts
