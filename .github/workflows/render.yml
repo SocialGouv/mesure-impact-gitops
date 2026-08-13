@@ -1,16 +1,32 @@
 name: Render
 
 on:
-  # Déclenché par le dépôt applicatif après une livraison : il transmet la version
-  # du chart OCI à épingler. Aucun jeton de ce dépôt ne vit chez l'applicatif —
-  # c'est lui qui appelle, avec une identité dont ce dépôt déclare qu'il l'accepte.
+  # Entrée 1 — le dépôt applicatif signale une livraison en passant la version.
+  # Demande une identité côté appelant (GitHub n'a pas d'équivalent du CI_JOB_TOKEN
+  # de GitLab, cf. README). Non câblée à ce jour.
   repository_dispatch:
     types: [livraison]
-  # Édition directe des sources : changer un host, du scaling, une ressource.
+
+  # Entrée 2 — ce dépôt va chercher lui-même la dernière version publiée sur ghcr.
+  # Aucun secret partagé, aucune identité à distribuer. C'est le chemin actif.
+  schedule:
+    - cron: "*/15 * * * *"
+
+  # Entrée 3 — édition directe des sources : un host, du scaling, une cadence.
   push:
     branches: [main]
     paths: ["apps/**"]
+
   workflow_dispatch:
+    inputs:
+      chart_version:
+        description: "Version à épingler (0.0.0-sha.xxxxxxxx). Vide = dernière publiée."
+        required: false
+      environment:
+        description: Environnement à épingler
+        type: choice
+        options: [dev, prod]
+        default: dev
 
 concurrency:
   group: render
@@ -18,6 +34,13 @@ concurrency:
 
 permissions:
   contents: write
+  packages: read
+
+env:
+  CHART: mesure-impact/charts/mesure-impact
+  # L'auto-suivi ne concerne que dev. La prod s'épingle délibérément, à la main ou
+  # par dispatch : c'est le seul garde-fou entre « livré » et « en production ».
+  AUTO_ENV: dev
 
 jobs:
   render:
@@ -25,40 +48,63 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 0
+        with: { ref: main, fetch-depth: 0 }
 
       - uses: azure/setup-helm@v4
 
-      - name: Épingler la version du chart
-        if: github.event_name == 'repository_dispatch'
-        env:
-          VERSION: ${{ github.event.client_payload.chart_version }}
-          APP: ${{ github.event.client_payload.app }}
-        run: |
-          set -euo pipefail
-          [ -n "$VERSION" ] || { echo "::error::chart_version absent du payload"; exit 1; }
-          # Format attendu : 0.0.0-sha.<8 hexa>. Une version libre laisserait
-          # épingler n'importe quoi depuis un dispatch.
-          case "$VERSION" in
-            0.0.0-sha.[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) : ;;
-            *) echo "::error::chart_version « $VERSION » hors format 0.0.0-sha.<sha8>"; exit 1 ;;
-          esac
-          for chart in apps/${APP:-mesure-impact}-*/Chart.yaml; do
-            [ -e "$chart" ] || continue
-            sed -i "s|^\( *version: \)0\.0\.0-sha\..*|\1$VERSION|" "$chart"
-            echo "$chart -> $VERSION"
-          done
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add apps/*/Chart.yaml
-          git diff --cached --quiet || git commit -m "chore: pin chart $VERSION [skip ci]"
-          git push origin main
-
-      - name: Rendre chaque environnement
+      - name: Résoudre la version à épingler
+        id: version
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DISPATCH_VERSION: ${{ github.event.client_payload.chart_version }}
+          INPUT_VERSION: ${{ github.event.inputs.chart_version }}
+          DISPATCH_ENV: ${{ github.event.client_payload.environment }}
+          INPUT_ENV: ${{ github.event.inputs.environment }}
+        run: |
+          set -euo pipefail
+          version="${DISPATCH_VERSION:-${INPUT_VERSION:-}}"
+          cible="${DISPATCH_ENV:-${INPUT_ENV:-}}"
+
+          if [ -z "$version" ]; then
+            # Dernière version publiée sur ghcr. Le package est public : pas de
+            # credential du dépôt applicatif à détenir ici.
+            version=$(gh api "/orgs/SocialGouv/packages/container/$(printf %s "$CHART" | sed 's|/|%2F|g')/versions" \
+              --jq '[.[].metadata.container.tags[]? | select(startswith("0.0.0-sha."))][0] // ""')
+            cible="${cible:-$AUTO_ENV}"
+          fi
+
+          [ -n "$version" ] || { echo "::error::aucune version de chart trouvée sur ghcr"; exit 1; }
+          # Format strict : sans ça, un dispatch pourrait épingler n'importe quoi.
+          case "$version" in
+            0.0.0-sha.[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) : ;;
+            *) echo "::error::version « $version » hors format 0.0.0-sha.<sha8>"; exit 1 ;;
+          esac
+          case "${cible:-dev}" in dev|prod) : ;; *) echo "::error::env « $cible » inconnu"; exit 1 ;; esac
+
+          echo "version=$version"        >> "$GITHUB_OUTPUT"
+          echo "cible=${cible:-dev}"     >> "$GITHUB_OUTPUT"
+          echo "Épinglage $version sur mesure-impact-${cible:-dev}"
+
+      - name: Épingler dans les sources
+        if: github.event_name != 'push'
+        run: |
+          set -euo pipefail
+          chart="apps/mesure-impact-${{ steps.version.outputs.cible }}/Chart.yaml"
+          [ -f "$chart" ] || { echo "::error::$chart introuvable"; exit 1; }
+          sed -i "s|^\( *version: \)0\.0\.0-sha\..*|\1${{ steps.version.outputs.version }}|" "$chart"
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "$chart"
+          if git diff --cached --quiet; then
+            echo "déjà à cette version"
+          else
+            # [skip ci] : le rendu tourne dans CE pipeline, un push relancerait en boucle.
+            git commit -m "chore: pin ${{ steps.version.outputs.cible }} sur ${{ steps.version.outputs.version }} [skip ci]"
+            git push origin main
+          fi
+
+      - name: Rendre chaque environnement
         run: |
           set -euo pipefail
           echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
@@ -67,30 +113,31 @@ jobs:
           echec=0
           for dossier in apps/*/; do
             nom=$(basename "$dossier")
-            # Un dossier incomplet est ignoré, jamais rendu à moitié.
+            # Un dossier incomplet est ignoré : mieux vaut ne pas rendre que rendre à moitié.
             [ -f "$dossier/Chart.yaml" ] || { echo "::warning::$nom sans Chart.yaml, ignoré"; continue; }
             [ -f "$dossier/env.yaml" ]   || { echo "::warning::$nom sans env.yaml, ignoré";   continue; }
+            grep -q 'PLACEHOLDER' "$dossier/Chart.yaml" && { echo "::warning::$nom pas encore épinglé, ignoré"; continue; }
 
             ns=$(yq -r '.namespace' "$dossier/env.yaml")
             [ -n "$ns" ] && [ "$ns" != "null" ] || { echo "::error::$nom : namespace absent de env.yaml"; echec=1; continue; }
 
-            echo "::group::$nom -> namespace $ns"
-            # `dependency update`, pas `build` : régénère le lock et encaisse un
-            # changement de version épinglée.
+            echo "::group::$nom -> $ns"
+            # `dependency update`, pas `build` : encaisse un changement de version épinglée.
             if ! helm dependency update "$dossier" >/dev/null; then
               echo "::error::$nom : dépendance OCI introuvable"; echec=1; echo "::endgroup::"; continue
             fi
-            # Nom de release CONSTANT, indépendant du dossier : le selector d'un
-            # Deployment est immuable et contient app.kubernetes.io/instance.
+            # Nom de release CONSTANT `mesure-impact`, jamais le nom du dossier : le
+            # selector d'un Deployment est immuable et contient app.kubernetes.io/instance.
             if ! helm template mesure-impact "$dossier" \
                    --namespace "$ns" \
-                   --values "$dossier/values.deploy.yaml" \
-                   > "rendu/$nom.yaml"; then
+                   --values "$dossier/values.deploy.yaml" > "rendu/$nom.yaml"; then
               echo "::error::$nom : rendu en échec"; echec=1; rm -f "rendu/$nom.yaml"
             fi
             echo "::endgroup::"
           done
+          # Un env en échec ne doit pas emporter les autres, mais doit se voir.
           [ "$echec" = 0 ] || { echo "::error::au moins un environnement n'a pas pu être rendu"; exit 1; }
+          ls -1 rendu/
 
       - name: Publier sur la branche rendered
         run: |
@@ -98,21 +145,16 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git fetch origin rendered:rendered 2>/dev/null || git branch rendered
-          git symbolic-ref HEAD refs/heads/rendered
-          git reset
+          cp -r rendu /tmp/rendu
+          git fetch origin rendered 2>/dev/null && git checkout -q rendered || git checkout -q --orphan rendered
+          git rm -rqf . 2>/dev/null || true
+          rm -rf apps .github rendu
 
-          # `main` fait autorité : un env retiré des sources disparaît du rendu.
-          for existant in */; do
-            nom="${existant%/}"
-            case "$nom" in rendu|apps|.github|.git) continue ;; esac
-            [ -d "apps/$nom" ] || rm -rf "$nom"
-          done
-          for f in rendu/*.yaml; do
+          for f in /tmp/rendu/*.yaml; do
             nom=$(basename "$f" .yaml)
             mkdir -p "$nom" && cp "$f" "$nom/manifests.yaml"
           done
-          rm -rf rendu apps .github
+          rm -rf /tmp/rendu
 
           git add -A
           if git diff --cached --quiet; then
