@@ -67,19 +67,28 @@ jobs:
           chmod 600 "$RUNNER_TEMP/kubeconfig"
           echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
 
+      - name: Namespace cible
+        id: cible
+        run: |
+          set -euo pipefail
+          ns=$(cat "${{ matrix.env }}/namespace")
+          [ -n "$ns" ] || { echo "::error::namespace vide pour ${{ matrix.env }}"; exit 1; }
+          echo "ns=$ns" >> "$GITHUB_OUTPUT"
+          echo "cible : $ns"
+
       - name: Diff avant apply
         continue-on-error: true
-        run: kubectl diff -f "${{ matrix.env }}/manifests.yaml" || true
+        run: kubectl diff -n "${{ steps.cible.outputs.ns }}" -f "${{ matrix.env }}/manifests.yaml" || true
 
       - name: Apply
         run: |
           set -euo pipefail
-          kubectl apply -f "${{ matrix.env }}/manifests.yaml"
+          kubectl apply -n "${{ steps.cible.outputs.ns }}" -f "${{ matrix.env }}/manifests.yaml"
 
       - name: Le site répond vraiment
         run: |
           set -euo pipefail
-          ns="${{ matrix.env }}"
+          ns="${{ steps.cible.outputs.ns }}"
           kubectl -n "$ns" rollout status deploy/mesure-impact-web --timeout=3m
           host=$(kubectl -n "$ns" get ing mesure-impact-web -o jsonpath='{.spec.rules[0].host}')
           echo "GET https://$host/"

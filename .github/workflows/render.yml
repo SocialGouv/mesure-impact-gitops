@@ -132,6 +132,11 @@ jobs:
                    --namespace "$ns" \
                    --values "$dossier/values.deploy.yaml" > "rendu/$nom.yaml"; then
               echo "::error::$nom : rendu en échec"; echec=1; rm -f "rendu/$nom.yaml"
+            else
+              # Les manifests ne portent volontairement aucun `namespace:` : c'est ce
+              # qui les rend rejouables. L'apply doit donc savoir où les poser, et le
+              # déduire du nom de dossier serait une convention tacite de plus.
+              echo "$ns" > "rendu/$nom.namespace"
             fi
             echo "::endgroup::"
           done
@@ -152,7 +157,9 @@ jobs:
 
           for f in /tmp/rendu/*.yaml; do
             nom=$(basename "$f" .yaml)
-            mkdir -p "$nom" && cp "$f" "$nom/manifests.yaml"
+            mkdir -p "$nom"
+            cp "$f" "$nom/manifests.yaml"
+            cp "/tmp/rendu/$nom.namespace" "$nom/namespace"
           done
           rm -rf /tmp/rendu
 
