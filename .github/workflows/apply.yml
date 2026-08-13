@@ -1,0 +1,87 @@
+name: Apply
+
+# La branche `rendered` est la seule source de ce qui part en cluster. Elle est
+# écrite par le job de rendu, jamais à la main, et jamais mergée.
+on:
+  push:
+    branches: [rendered]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environnement à réappliquer
+        type: choice
+        options: [dev, prod]
+        default: dev
+
+permissions:
+  contents: read
+
+jobs:
+  cibles:
+    name: Environnements à appliquer
+    runs-on: ubuntu-latest
+    outputs:
+      envs: ${{ steps.calcul.outputs.envs }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: rendered
+          fetch-depth: 2
+      - id: calcul
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = workflow_dispatch ]; then
+            echo 'envs=["mesure-impact-${{ github.event.inputs.environment }}"]' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # N'appliquer que ce qui a changé : réappliquer un env intact ne
+          # produirait rien, mais brouillerait la lecture de l'historique.
+          modifies=$(git diff --name-only HEAD~1 HEAD -- '*/manifests.yaml' \
+                     | xargs -r -n1 dirname | sort -u | jq -Rsc 'split("\n") | map(select(. != ""))')
+          echo "envs=${modifies:-[]}" >> "$GITHUB_OUTPUT"
+          echo "à appliquer : ${modifies:-[]}"
+
+  apply:
+    name: Apply ${{ matrix.env }}
+    needs: cibles
+    if: needs.cibles.outputs.envs != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env: ${{ fromJson(needs.cibles.outputs.envs) }}
+    # Chaque env porte son propre kubeconfig, celui d'un bot Rancher cloisonné à
+    # son seul namespace. C'est ici que se posent les règles de protection.
+    environment: ${{ matrix.env == 'mesure-impact-prod' && 'prod' || 'dev' }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: rendered }
+      - uses: azure/setup-kubectl@v4
+
+      - name: Extract kubeconfig
+        env:
+          KUBECONFIG_B64: ${{ secrets.KUBECONFIG }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$KUBECONFIG_B64" | base64 --decode > "$RUNNER_TEMP/kubeconfig"
+          chmod 600 "$RUNNER_TEMP/kubeconfig"
+          echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
+
+      - name: Diff avant apply
+        continue-on-error: true
+        run: kubectl diff -f "${{ matrix.env }}/manifests.yaml" || true
+
+      - name: Apply
+        run: |
+          set -euo pipefail
+          kubectl apply -f "${{ matrix.env }}/manifests.yaml"
+
+      - name: Le site répond vraiment
+        run: |
+          set -euo pipefail
+          ns="${{ matrix.env }}"
+          kubectl -n "$ns" rollout status deploy/mesure-impact-web --timeout=3m
+          host=$(kubectl -n "$ns" get ing mesure-impact-web -o jsonpath='{.spec.rules[0].host}')
+          echo "GET https://$host/"
+          curl -fsS -o /dev/null --retry 5 --retry-delay 5 --max-time 20 "https://$host/"
+          echo "200 OK"

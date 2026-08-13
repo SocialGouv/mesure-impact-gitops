@@ -1,0 +1,12 @@
+# Tout ce qui est spécifique à cette instance. Le chart applicatif n'en sait rien.
+mesure-impact:
+  environment: prod
+
+  web:
+    host: mesure-impact.ovh.fabrique.social.gouv.fr
+    replicas: 2
+
+  cron:
+    # Repasser à false une fois les tokens scellés pour cet env.
+    suspend: true
+    schedule: "0 6 * * *"

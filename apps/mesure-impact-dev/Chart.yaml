@@ -1,0 +1,11 @@
+apiVersion: v2
+name: mesure-impact-dev
+description: Instance dev de mesure-impact
+type: application
+version: 0.0.0
+dependencies:
+  # Version épinglée : c'est elle qui rend un déploiement reproductible. Elle est
+  # réécrite par la CI quand le dépôt applicatif signale une nouvelle livraison.
+  - name: mesure-impact
+    version: 0.0.0-sha.PLACEHOLDER
+    repository: oci://ghcr.io/socialgouv/mesure-impact/charts

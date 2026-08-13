@@ -1,0 +1,12 @@
+# Tout ce qui est spécifique à cette instance. Le chart applicatif n'en sait rien.
+# Les valeurs sont sous la clé du sous-chart : c'est un wrapper.
+mesure-impact:
+  environment: dev
+
+  web:
+    host: mesure-impact-dev.ovh.fabrique.social.gouv.fr
+
+  cron:
+    # Repasser à false une fois les tokens scellés pour cet env.
+    suspend: true
+    schedule: "0 6 * * *"

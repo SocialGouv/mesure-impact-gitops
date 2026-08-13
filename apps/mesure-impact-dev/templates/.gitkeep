@@ -1,0 +1,2 @@
+# Ressources propres à l'instance dev : SealedSecrets des produits, et plus tard
+# les ExternalSecret quand on passera sur Atlas. Le chart applicatif n'en porte aucune.

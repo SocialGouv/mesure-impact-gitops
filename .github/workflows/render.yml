@@ -1,0 +1,123 @@
+name: Render
+
+on:
+  # Déclenché par le dépôt applicatif après une livraison : il transmet la version
+  # du chart OCI à épingler. Aucun jeton de ce dépôt ne vit chez l'applicatif —
+  # c'est lui qui appelle, avec une identité dont ce dépôt déclare qu'il l'accepte.
+  repository_dispatch:
+    types: [livraison]
+  # Édition directe des sources : changer un host, du scaling, une ressource.
+  push:
+    branches: [main]
+    paths: ["apps/**"]
+  workflow_dispatch:
+
+concurrency:
+  group: render
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  render:
+    name: Rendre les manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: azure/setup-helm@v4
+
+      - name: Épingler la version du chart
+        if: github.event_name == 'repository_dispatch'
+        env:
+          VERSION: ${{ github.event.client_payload.chart_version }}
+          APP: ${{ github.event.client_payload.app }}
+        run: |
+          set -euo pipefail
+          [ -n "$VERSION" ] || { echo "::error::chart_version absent du payload"; exit 1; }
+          # Format attendu : 0.0.0-sha.<8 hexa>. Une version libre laisserait
+          # épingler n'importe quoi depuis un dispatch.
+          case "$VERSION" in
+            0.0.0-sha.[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) : ;;
+            *) echo "::error::chart_version « $VERSION » hors format 0.0.0-sha.<sha8>"; exit 1 ;;
+          esac
+          for chart in apps/${APP:-mesure-impact}-*/Chart.yaml; do
+            [ -e "$chart" ] || continue
+            sed -i "s|^\( *version: \)0\.0\.0-sha\..*|\1$VERSION|" "$chart"
+            echo "$chart -> $VERSION"
+          done
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add apps/*/Chart.yaml
+          git diff --cached --quiet || git commit -m "chore: pin chart $VERSION [skip ci]"
+          git push origin main
+
+      - name: Rendre chaque environnement
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
+
+          rm -rf rendu && mkdir -p rendu
+          echec=0
+          for dossier in apps/*/; do
+            nom=$(basename "$dossier")
+            # Un dossier incomplet est ignoré, jamais rendu à moitié.
+            [ -f "$dossier/Chart.yaml" ] || { echo "::warning::$nom sans Chart.yaml, ignoré"; continue; }
+            [ -f "$dossier/env.yaml" ]   || { echo "::warning::$nom sans env.yaml, ignoré";   continue; }
+
+            ns=$(yq -r '.namespace' "$dossier/env.yaml")
+            [ -n "$ns" ] && [ "$ns" != "null" ] || { echo "::error::$nom : namespace absent de env.yaml"; echec=1; continue; }
+
+            echo "::group::$nom -> namespace $ns"
+            # `dependency update`, pas `build` : régénère le lock et encaisse un
+            # changement de version épinglée.
+            if ! helm dependency update "$dossier" >/dev/null; then
+              echo "::error::$nom : dépendance OCI introuvable"; echec=1; echo "::endgroup::"; continue
+            fi
+            # Nom de release CONSTANT, indépendant du dossier : le selector d'un
+            # Deployment est immuable et contient app.kubernetes.io/instance.
+            if ! helm template mesure-impact "$dossier" \
+                   --namespace "$ns" \
+                   --values "$dossier/values.deploy.yaml" \
+                   > "rendu/$nom.yaml"; then
+              echo "::error::$nom : rendu en échec"; echec=1; rm -f "rendu/$nom.yaml"
+            fi
+            echo "::endgroup::"
+          done
+          [ "$echec" = 0 ] || { echo "::error::au moins un environnement n'a pas pu être rendu"; exit 1; }
+
+      - name: Publier sur la branche rendered
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git fetch origin rendered:rendered 2>/dev/null || git branch rendered
+          git symbolic-ref HEAD refs/heads/rendered
+          git reset
+
+          # `main` fait autorité : un env retiré des sources disparaît du rendu.
+          for existant in */; do
+            nom="${existant%/}"
+            case "$nom" in rendu|apps|.github|.git) continue ;; esac
+            [ -d "apps/$nom" ] || rm -rf "$nom"
+          done
+          for f in rendu/*.yaml; do
+            nom=$(basename "$f" .yaml)
+            mkdir -p "$nom" && cp "$f" "$nom/manifests.yaml"
+          done
+          rm -rf rendu apps .github
+
+          git add -A
+          if git diff --cached --quiet; then
+            echo "rendu inchangé"
+          else
+            git commit -m "render: manifests de ${{ github.sha }}"
+            git push origin rendered
+          fi
