@@ -1,0 +1,312 @@
+---
+# Source: mesure-impact-dev/charts/mesure-impact/templates/networkpolicy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mesure-impact-ingress
+  labels:
+    app.kubernetes.io/name: mesure-impact
+    app.kubernetes.io/instance: mesure-impact
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: ""
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: {}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              network-policy/source: ingress-controller
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              network-policy/source: monitoring
+
+---
+# Source: mesure-impact-dev/charts/mesure-impact/templates/web.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: mesure-impact-web
+  labels:
+    app.kubernetes.io/name: mesure-impact
+    app.kubernetes.io/instance: mesure-impact
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: ""
+    app.kubernetes.io/component: web
+spec:
+  selector:
+    app.kubernetes.io/name: mesure-impact
+    app.kubernetes.io/instance: mesure-impact
+    app.kubernetes.io/component: web
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# Source: mesure-impact-dev/charts/mesure-impact/templates/web.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mesure-impact-web
+  labels:
+    app.kubernetes.io/name: mesure-impact
+    app.kubernetes.io/instance: mesure-impact
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: ""
+    app.kubernetes.io/component: web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mesure-impact
+      app.kubernetes.io/instance: mesure-impact
+      app.kubernetes.io/component: web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mesure-impact
+        app.kubernetes.io/instance: mesure-impact
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/version: ""
+        app.kubernetes.io/component: web
+    spec:
+      # Aucun appel à l'API Kubernetes : pas de token de SA monté.
+      automountServiceAccountToken: false
+      securityContext:
+        fsGroup: 101
+        runAsGroup: 101
+        runAsNonRoot: true
+        runAsUser: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: web
+          image: ghcr.io/socialgouv/mesure-impact-web:sha-8118da16374a69e876d7bbdefa6d8b57f9f4a57f
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            initialDelaySeconds: 2
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            limits:
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: cache, mountPath: /var/cache/nginx }
+      volumes:
+        - { name: tmp, emptyDir: {} }
+        - { name: cache, emptyDir: {} }
+---
+# Source: mesure-impact-dev/charts/mesure-impact/templates/cronjob.yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mesure-impact-sante-basavi-collect
+  labels:
+    app.kubernetes.io/name: mesure-impact
+    app.kubernetes.io/instance: mesure-impact
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: ""
+    app.kubernetes.io/component: collect
+    mesure-impact/produit: sante-basavi
+spec:
+  schedule: "0 6 * * *"
+  timeZone: "Europe/Paris"
+  suspend: true
+  concurrencyPolicy: Forbid
+  # Sans cette borne, un contrôleur indisponible plusieurs heures accumule les
+  # démarrages manqués ; passé 100, le CronJob cesse définitivement d'être planifié.
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: mesure-impact
+            app.kubernetes.io/instance: mesure-impact
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/version: ""
+            app.kubernetes.io/component: collect
+            mesure-impact/produit: sante-basavi
+        spec:
+          restartPolicy: OnFailure
+          # Aucun appel à l'API Kubernetes : pas de token de SA monté.
+          automountServiceAccountToken: false
+          securityContext:
+            fsGroup: 1000
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: collect
+              image: ghcr.io/socialgouv/mesure-impact-cron:sha-8118da16374a69e876d7bbdefa6d8b57f9f4a57f
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                  - ALL
+                readOnlyRootFilesystem: true
+              # Les deux seuls vrais secrets : tokens Matomo et Grist du produit.
+              envFrom:
+                - secretRef:
+                    name: mesure-impact-sante-basavi-tokens
+              # Config non sensible : elle vient de produit.yaml, relisible en PR.
+              env:
+                - name: PRODUIT
+                  value: "sante/basavi"
+                - name: ENVIRONMENT
+                  value: "dev"
+                - name: RUN_ID
+                  value: "basavi"
+                - name: MATOMO_URL
+                  value: "https://matomo.fabrique.social.gouv.fr"
+                - name: MATOMO_SITE_ID
+                  value: "168"
+                - name: GRIST_URL
+                  value: "https://grist.numerique.gouv.fr"
+                - name: GRIST_DOC_ID
+                  value: "1kb1wHNCjAns"
+              resources:
+                limits:
+                  memory: 512Mi
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}
+
+---
+# Source: mesure-impact-dev/charts/mesure-impact/templates/web.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mesure-impact-web
+  labels:
+    app.kubernetes.io/name: mesure-impact
+    app.kubernetes.io/instance: mesure-impact
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: ""
+    app.kubernetes.io/component: web
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - "mesure-impact-dev.ovh.fabrique.social.gouv.fr"
+      secretName: wildcard-crt
+  rules:
+    - host: "mesure-impact-dev.ovh.fabrique.social.gouv.fr"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: mesure-impact-web
+                port:
+                  name: http
+
+---
+# Source: mesure-impact-dev/charts/mesure-impact/templates/alerts.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: mesure-impact-collecte
+  labels:
+    app.kubernetes.io/name: mesure-impact
+    app.kubernetes.io/instance: mesure-impact
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: ""
+    prometheus/rules: infra
+spec:
+  groups:
+    - name: mesure-impact-collecte
+      rules:
+        - alert: MesureImpactCollecteEnEchec
+          # Borné à la fenêtre récente : `kube_job_status_failed > 0` reste vrai tant
+          # que l'objet Job existe, et failedJobsHistoryLimit le conserve jusqu'à trois
+          # échecs suivants — l'alerte ne se résoudrait jamais après un échec isolé.
+          # `max by` déduplique : plusieurs exportateurs publient la même métrique
+          # (kube-state-metrics, kubernetes-pods, kubecost…), soit autant d'alertes
+          # identiques pour un seul job en échec.
+          expr: |
+            max by (namespace, job_name) (
+              kube_job_status_failed{namespace="mesure-impact-dev", job_name=~"mesure-impact-.*"}
+            ) > 0
+            and on (namespace, job_name) (
+              time() - max by (namespace, job_name) (kube_job_created{namespace="mesure-impact-dev"})
+              < 86400
+            )
+          for: 15m
+          labels:
+            severity: warning
+            environnement: "dev"
+          annotations:
+            summary: "Collecte {{ $labels.job_name }} en échec"
+            description: >-
+              Le job {{ $labels.job_name }} du namespace mesure-impact-dev
+              a échoué. Le tableau de bord concerné n'est plus alimenté.
+
+        # kube_cronjob_status_last_successful_time n'est PAS exporté tant qu'un
+        # CronJob n'a jamais réussi. La seule expression « trop vieux » serait donc
+        # aveugle au cas le plus grave : celui qui n'a jamais collecté. D'où la
+        # seconde branche, qui repère les CronJobs connus et sans succès, en
+        # excluant ceux qu'on a délibérément suspendus.
+        - alert: MesureImpactCollecteMuette
+          expr: |
+            (
+              time() - max by (cronjob) (
+                kube_cronjob_status_last_successful_time{namespace="mesure-impact-dev", cronjob=~"mesure-impact-.*"}
+              ) > 172800
+              unless on (cronjob) (kube_cronjob_spec_suspend{namespace="mesure-impact-dev"} == 1)
+            )
+            or
+            (
+              max by (cronjob) (kube_cronjob_info{namespace="mesure-impact-dev", cronjob=~"mesure-impact-.*"})
+              unless on (cronjob) kube_cronjob_status_last_successful_time{namespace="mesure-impact-dev"}
+              unless on (cronjob) (kube_cronjob_spec_suspend{namespace="mesure-impact-dev"} == 1)
+              and on (cronjob) (
+                time() - max by (cronjob) (kube_cronjob_created{namespace="mesure-impact-dev", cronjob=~"mesure-impact-.*"})
+                > 172800
+              )
+            )
+          for: 30m
+          labels:
+            severity: warning
+            environnement: "dev"
+          annotations:
+            summary: "Collecte {{ $labels.cronjob }} sans succès depuis trop longtemps"
+            description: >-
+              Aucune collecte réussie pour {{ $labels.cronjob }} depuis plus de
+              48 h. Panne silencieuse probable :
+              les données affichées vieillissent sans que rien ne casse.

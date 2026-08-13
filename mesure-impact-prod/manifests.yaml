@@ -1,0 +1,167 @@
+---
+# Source: mesure-impact-prod/charts/mesure-impact/templates/networkpolicy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mesure-impact-ingress
+  labels:
+    app.kubernetes.io/name: mesure-impact
+    app.kubernetes.io/instance: mesure-impact
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: ""
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: {}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              network-policy/source: ingress-controller
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              network-policy/source: monitoring
+
+---
+# Source: mesure-impact-prod/charts/mesure-impact/templates/web.yaml
+# Empêche une éviction simultanée des deux répliques (drain de nœud, upgrade).
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: mesure-impact-web
+  labels:
+    app.kubernetes.io/name: mesure-impact
+    app.kubernetes.io/instance: mesure-impact
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: ""
+    app.kubernetes.io/component: web
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mesure-impact
+      app.kubernetes.io/instance: mesure-impact
+      app.kubernetes.io/component: web
+---
+# Source: mesure-impact-prod/charts/mesure-impact/templates/web.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: mesure-impact-web
+  labels:
+    app.kubernetes.io/name: mesure-impact
+    app.kubernetes.io/instance: mesure-impact
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: ""
+    app.kubernetes.io/component: web
+spec:
+  selector:
+    app.kubernetes.io/name: mesure-impact
+    app.kubernetes.io/instance: mesure-impact
+    app.kubernetes.io/component: web
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# Source: mesure-impact-prod/charts/mesure-impact/templates/web.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mesure-impact-web
+  labels:
+    app.kubernetes.io/name: mesure-impact
+    app.kubernetes.io/instance: mesure-impact
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: ""
+    app.kubernetes.io/component: web
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mesure-impact
+      app.kubernetes.io/instance: mesure-impact
+      app.kubernetes.io/component: web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mesure-impact
+        app.kubernetes.io/instance: mesure-impact
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/version: ""
+        app.kubernetes.io/component: web
+    spec:
+      # Aucun appel à l'API Kubernetes : pas de token de SA monté.
+      automountServiceAccountToken: false
+      securityContext:
+        fsGroup: 101
+        runAsGroup: 101
+        runAsNonRoot: true
+        runAsUser: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: web
+          image: ghcr.io/socialgouv/mesure-impact-web:sha-8118da16374a69e876d7bbdefa6d8b57f9f4a57f
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            initialDelaySeconds: 2
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            limits:
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: cache, mountPath: /var/cache/nginx }
+      volumes:
+        - { name: tmp, emptyDir: {} }
+        - { name: cache, emptyDir: {} }
+---
+# Source: mesure-impact-prod/charts/mesure-impact/templates/web.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mesure-impact-web
+  labels:
+    app.kubernetes.io/name: mesure-impact
+    app.kubernetes.io/instance: mesure-impact
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: ""
+    app.kubernetes.io/component: web
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - "mesure-impact.ovh.fabrique.social.gouv.fr"
+      secretName: wildcard-crt
+  rules:
+    - host: "mesure-impact.ovh.fabrique.social.gouv.fr"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: mesure-impact-web
+                port:
+                  name: http
