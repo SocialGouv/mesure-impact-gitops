@@ -46,6 +46,7 @@ spec:
     - name: http
       port: 80
       targetPort: http
+
 ---
 # Source: mesure-impact-dev/charts/mesure-impact/templates/web.yaml
 apiVersion: apps/v1
@@ -116,6 +117,7 @@ spec:
       volumes:
         - { name: tmp, emptyDir: {} }
         - { name: cache, emptyDir: {} }
+
 ---
 # Source: mesure-impact-dev/charts/mesure-impact/templates/cronjob.yaml
 apiVersion: batch/v1
