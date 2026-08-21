@@ -7,6 +7,10 @@ mesure-impact:
     host: mesure-impact-dev.ovh.fabrique.social.gouv.fr
 
   cron:
-    # Repasser à false une fois les tokens scellés pour cet env.
-    suspend: true
+    # Tokens scellés et collecte activée le 20/08/2026, côté dépôt applicatif
+    # (SocialGouv/mesure-impact#6). Les deux applicateurs doivent déclarer le même
+    # état : tant que ce dépôt porte `true`, un `Apply` dispatché à la main
+    # rééteindrait la collecte sans que rien ne le signale — l'alerte
+    # MesureImpactCollecteMuette exclut par construction les CronJobs suspendus.
+    suspend: false
     schedule: "0 6 * * *"
