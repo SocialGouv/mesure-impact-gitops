@@ -8,7 +8,7 @@ metadata:
     app.kubernetes.io/name: mesure-impact
     app.kubernetes.io/instance: mesure-impact
     app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/version: "sha-c96d62f5997f898eccdca03bf4c980e21a5df7e6"
+    app.kubernetes.io/version: "sha-3cb72fee842d8f70eab07cb2c4e604f355088954"
 spec:
   podSelector: {}
   policyTypes:
@@ -35,7 +35,7 @@ metadata:
     app.kubernetes.io/name: mesure-impact
     app.kubernetes.io/instance: mesure-impact
     app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/version: "sha-c96d62f5997f898eccdca03bf4c980e21a5df7e6"
+    app.kubernetes.io/version: "sha-3cb72fee842d8f70eab07cb2c4e604f355088954"
     app.kubernetes.io/component: web
 spec:
   selector:
@@ -57,7 +57,7 @@ metadata:
     app.kubernetes.io/name: mesure-impact
     app.kubernetes.io/instance: mesure-impact
     app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/version: "sha-c96d62f5997f898eccdca03bf4c980e21a5df7e6"
+    app.kubernetes.io/version: "sha-3cb72fee842d8f70eab07cb2c4e604f355088954"
     app.kubernetes.io/component: web
 spec:
   replicas: 1
@@ -72,7 +72,7 @@ spec:
         app.kubernetes.io/name: mesure-impact
         app.kubernetes.io/instance: mesure-impact
         app.kubernetes.io/managed-by: Helm
-        app.kubernetes.io/version: "sha-c96d62f5997f898eccdca03bf4c980e21a5df7e6"
+        app.kubernetes.io/version: "sha-3cb72fee842d8f70eab07cb2c4e604f355088954"
         app.kubernetes.io/component: web
     spec:
       # Aucun appel à l'API Kubernetes : pas de token de SA monté.
@@ -86,7 +86,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: web
-          image: ghcr.io/socialgouv/mesure-impact-web:sha-c96d62f5997f898eccdca03bf4c980e21a5df7e6
+          image: ghcr.io/socialgouv/mesure-impact-web:sha-3cb72fee842d8f70eab07cb2c4e604f355088954
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -128,7 +128,7 @@ metadata:
     app.kubernetes.io/name: mesure-impact
     app.kubernetes.io/instance: mesure-impact
     app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/version: "sha-c96d62f5997f898eccdca03bf4c980e21a5df7e6"
+    app.kubernetes.io/version: "sha-3cb72fee842d8f70eab07cb2c4e604f355088954"
     app.kubernetes.io/component: collect
     mesure-impact/produit: sante-basavi
 spec:
@@ -151,7 +151,7 @@ spec:
             app.kubernetes.io/name: mesure-impact
             app.kubernetes.io/instance: mesure-impact
             app.kubernetes.io/managed-by: Helm
-            app.kubernetes.io/version: "sha-c96d62f5997f898eccdca03bf4c980e21a5df7e6"
+            app.kubernetes.io/version: "sha-3cb72fee842d8f70eab07cb2c4e604f355088954"
             app.kubernetes.io/component: collect
             mesure-impact/produit: sante-basavi
         spec:
@@ -167,7 +167,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: collect
-              image: ghcr.io/socialgouv/mesure-impact-cron:sha-c96d62f5997f898eccdca03bf4c980e21a5df7e6
+              image: ghcr.io/socialgouv/mesure-impact-cron:sha-3cb72fee842d8f70eab07cb2c4e604f355088954
               imagePullPolicy: IfNotPresent
               securityContext:
                 allowPrivilegeEscalation: false
@@ -218,7 +218,7 @@ metadata:
     app.kubernetes.io/name: mesure-impact
     app.kubernetes.io/instance: mesure-impact
     app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/version: "sha-c96d62f5997f898eccdca03bf4c980e21a5df7e6"
+    app.kubernetes.io/version: "sha-3cb72fee842d8f70eab07cb2c4e604f355088954"
     app.kubernetes.io/component: web
 spec:
   ingressClassName: nginx
@@ -248,7 +248,7 @@ metadata:
     app.kubernetes.io/name: mesure-impact
     app.kubernetes.io/instance: mesure-impact
     app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/version: "sha-c96d62f5997f898eccdca03bf4c980e21a5df7e6"
+    app.kubernetes.io/version: "sha-3cb72fee842d8f70eab07cb2c4e604f355088954"
     prometheus/rules: infra
 spec:
   groups:
@@ -342,13 +342,18 @@ spec:
         # que six versions de la règle précédente ont cherché dans l'historique de
         # `spec_suspend`, et qu'il suffisait de demander.
         #
+        # `min by`, pas `max by` : sur une ÉCHÉANCE FUTURE, « le plus grand » veut dire
+        # « le plus loin », donc l'exportateur le plus optimiste. La polarité s'inverse
+        # par rapport à la règle précédente, où `max` sur un horodatage passé retenait
+        # le plus récent — le même mot n'a pas le même sens sur les deux métriques.
+        #
         # `for: 26h` : une cadence quotidienne plus deux heures de marge. Absorbe un
         # retard de contrôleur et la réactivation après maintenance — le CronJob
         # redéclenche au prochain créneau, donc en moins de 24 h — sans jamais
         # s'éteindre sur une planification réellement arrêtée.
         - alert: MesureImpactCollecteNonPlanifiee
           expr: |
-            time() - max by (namespace, cronjob) (
+            time() - min by (namespace, cronjob) (
               kube_cronjob_next_schedule_time{namespace="mesure-impact-dev", cronjob=~"mesure-impact-.*"}
             ) > 0
           for: 26h
@@ -359,5 +364,40 @@ spec:
             summary: "Collecte {{ $labels.cronjob }} n'est plus planifiée"
             description: >-
               Aucun Job n'a été créé pour {{ $labels.cronjob }} depuis plus d'une
-              cadence : quota atteint, webhook d'admission, schedule illisible ou contrôleur
-              en défaut. La collecte est arrêtée, et rien d'autre ne le signale.
+              cadence : quota atteint, webhook d'admission, ou contrôleur en défaut.
+              La collecte est arrêtée, et rien d'autre ne le signale.
+
+        # Garde-fou de dernier recours, un par produit de l'inventaire.
+        #
+        # Les deux règles ci-dessus testent des VALEURS. Aucune ne vérifie une PRÉSENCE :
+        # une série absente ne se distingue pas d'une série saine, et l'alerte reste verte
+        # sur une collecte morte. `kube_cronjob_next_schedule_time` disparaît pour toutes
+        # ces raisons à la fois — CronJob supprimé, produit retiré du chart,
+        # kube-state-metrics arrêté, `spec.timeZone` que ksm n'arrive pas à résoudre,
+        # schedule illisible. Aucune n'est exotique, et aucune ne serait vue.
+        #
+        # L'ancre est `kube_cronjob_spec_suspend` : c'est la seule métrique CronJob que
+        # ksm émette INCONDITIONNELLEMENT (internal/store/cronjob.go, aucun chemin
+        # d'erreur, stabilité STABLE). Elle répond donc à « ce CronJob existe-t-il, et
+        # est-il délibérément suspendu ? » quand plus rien d'autre ne répond.
+        #
+        # `min by` sur la clause de silence : taire demande le consensus des exportateurs.
+        - alert: MesureImpactCollecteNonObservable
+          expr: |
+            absent(kube_cronjob_next_schedule_time{namespace="mesure-impact-dev", cronjob="mesure-impact-sante-basavi-collect"}) == 1
+            unless on (namespace, cronjob) (
+              min by (namespace, cronjob) (
+                kube_cronjob_spec_suspend{namespace="mesure-impact-dev", cronjob="mesure-impact-sante-basavi-collect"}
+              ) == 1
+            )
+          for: 30m
+          labels:
+            severity: warning
+            environnement: "dev"
+          annotations:
+            summary: "Collecte mesure-impact-sante-basavi-collect n'est plus observable"
+            description: >-
+              Plus aucune métrique de planification pour mesure-impact-sante-basavi-collect, et il n'est pas
+              suspendu : CronJob supprimé, produit retiré du chart, kube-state-metrics
+              arrêté, ou schedule que ksm n'arrive pas à lire. Les deux autres alertes
+              sont aveugles dans cet état — elles testent des valeurs, celle-ci une présence.
