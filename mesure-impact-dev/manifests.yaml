@@ -8,7 +8,7 @@ metadata:
     app.kubernetes.io/name: mesure-impact
     app.kubernetes.io/instance: mesure-impact
     app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/version: "sha-3cb72fee842d8f70eab07cb2c4e604f355088954"
+    app.kubernetes.io/version: "sha-1fb48eeb2db2ca8738ebdc03b596917c97901e40"
 spec:
   podSelector: {}
   policyTypes:
@@ -35,7 +35,7 @@ metadata:
     app.kubernetes.io/name: mesure-impact
     app.kubernetes.io/instance: mesure-impact
     app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/version: "sha-3cb72fee842d8f70eab07cb2c4e604f355088954"
+    app.kubernetes.io/version: "sha-1fb48eeb2db2ca8738ebdc03b596917c97901e40"
     app.kubernetes.io/component: web
 spec:
   selector:
@@ -57,7 +57,7 @@ metadata:
     app.kubernetes.io/name: mesure-impact
     app.kubernetes.io/instance: mesure-impact
     app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/version: "sha-3cb72fee842d8f70eab07cb2c4e604f355088954"
+    app.kubernetes.io/version: "sha-1fb48eeb2db2ca8738ebdc03b596917c97901e40"
     app.kubernetes.io/component: web
 spec:
   replicas: 1
@@ -72,7 +72,7 @@ spec:
         app.kubernetes.io/name: mesure-impact
         app.kubernetes.io/instance: mesure-impact
         app.kubernetes.io/managed-by: Helm
-        app.kubernetes.io/version: "sha-3cb72fee842d8f70eab07cb2c4e604f355088954"
+        app.kubernetes.io/version: "sha-1fb48eeb2db2ca8738ebdc03b596917c97901e40"
         app.kubernetes.io/component: web
     spec:
       # Aucun appel à l'API Kubernetes : pas de token de SA monté.
@@ -86,7 +86,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: web
-          image: ghcr.io/socialgouv/mesure-impact-web:sha-3cb72fee842d8f70eab07cb2c4e604f355088954
+          image: ghcr.io/socialgouv/mesure-impact-web:sha-1fb48eeb2db2ca8738ebdc03b596917c97901e40
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -128,7 +128,7 @@ metadata:
     app.kubernetes.io/name: mesure-impact
     app.kubernetes.io/instance: mesure-impact
     app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/version: "sha-3cb72fee842d8f70eab07cb2c4e604f355088954"
+    app.kubernetes.io/version: "sha-1fb48eeb2db2ca8738ebdc03b596917c97901e40"
     app.kubernetes.io/component: collect
     mesure-impact/produit: sante-basavi
 spec:
@@ -151,7 +151,7 @@ spec:
             app.kubernetes.io/name: mesure-impact
             app.kubernetes.io/instance: mesure-impact
             app.kubernetes.io/managed-by: Helm
-            app.kubernetes.io/version: "sha-3cb72fee842d8f70eab07cb2c4e604f355088954"
+            app.kubernetes.io/version: "sha-1fb48eeb2db2ca8738ebdc03b596917c97901e40"
             app.kubernetes.io/component: collect
             mesure-impact/produit: sante-basavi
         spec:
@@ -167,7 +167,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: collect
-              image: ghcr.io/socialgouv/mesure-impact-cron:sha-3cb72fee842d8f70eab07cb2c4e604f355088954
+              image: ghcr.io/socialgouv/mesure-impact-cron:sha-1fb48eeb2db2ca8738ebdc03b596917c97901e40
               imagePullPolicy: IfNotPresent
               securityContext:
                 allowPrivilegeEscalation: false
@@ -218,7 +218,7 @@ metadata:
     app.kubernetes.io/name: mesure-impact
     app.kubernetes.io/instance: mesure-impact
     app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/version: "sha-3cb72fee842d8f70eab07cb2c4e604f355088954"
+    app.kubernetes.io/version: "sha-1fb48eeb2db2ca8738ebdc03b596917c97901e40"
     app.kubernetes.io/component: web
 spec:
   ingressClassName: nginx
@@ -248,7 +248,7 @@ metadata:
     app.kubernetes.io/name: mesure-impact
     app.kubernetes.io/instance: mesure-impact
     app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/version: "sha-3cb72fee842d8f70eab07cb2c4e604f355088954"
+    app.kubernetes.io/version: "sha-1fb48eeb2db2ca8738ebdc03b596917c97901e40"
     prometheus/rules: infra
 spec:
   groups:
