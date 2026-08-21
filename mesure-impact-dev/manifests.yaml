@@ -134,7 +134,7 @@ metadata:
 spec:
   schedule: "0 6 * * *"
   timeZone: "Europe/Paris"
-  suspend: true
+  suspend: false
   concurrencyPolicy: Forbid
   # Sans cette borne, un contrôleur indisponible plusieurs heures accumule les
   # démarrages manqués ; passé 100, le CronJob cesse définitivement d'être planifié.
