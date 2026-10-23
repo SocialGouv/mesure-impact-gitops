@@ -8,7 +8,7 @@ metadata:
     app.kubernetes.io/name: mesure-impact
     app.kubernetes.io/instance: mesure-impact
     app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/version: "sha-a6d01f5fce0480142d76c5e7f699a38163eee3bb"
+    app.kubernetes.io/version: "sha-a316b8cace6a9b72c957ec6c1c87dd2d83fb8e32"
 spec:
   podSelector: {}
   policyTypes:
@@ -35,7 +35,7 @@ metadata:
     app.kubernetes.io/name: mesure-impact
     app.kubernetes.io/instance: mesure-impact
     app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/version: "sha-a6d01f5fce0480142d76c5e7f699a38163eee3bb"
+    app.kubernetes.io/version: "sha-a316b8cace6a9b72c957ec6c1c87dd2d83fb8e32"
     app.kubernetes.io/component: web
 spec:
   selector:
@@ -57,7 +57,7 @@ metadata:
     app.kubernetes.io/name: mesure-impact
     app.kubernetes.io/instance: mesure-impact
     app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/version: "sha-a6d01f5fce0480142d76c5e7f699a38163eee3bb"
+    app.kubernetes.io/version: "sha-a316b8cace6a9b72c957ec6c1c87dd2d83fb8e32"
     app.kubernetes.io/component: web
 spec:
   replicas: 1
@@ -72,7 +72,7 @@ spec:
         app.kubernetes.io/name: mesure-impact
         app.kubernetes.io/instance: mesure-impact
         app.kubernetes.io/managed-by: Helm
-        app.kubernetes.io/version: "sha-a6d01f5fce0480142d76c5e7f699a38163eee3bb"
+        app.kubernetes.io/version: "sha-a316b8cace6a9b72c957ec6c1c87dd2d83fb8e32"
         app.kubernetes.io/component: web
     spec:
       # Aucun appel à l'API Kubernetes : pas de token de SA monté.
@@ -86,7 +86,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: web
-          image: ghcr.io/socialgouv/mesure-impact-web:sha-a6d01f5fce0480142d76c5e7f699a38163eee3bb
+          image: ghcr.io/socialgouv/mesure-impact-web:sha-a316b8cace6a9b72c957ec6c1c87dd2d83fb8e32
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -128,7 +128,7 @@ metadata:
     app.kubernetes.io/name: mesure-impact
     app.kubernetes.io/instance: mesure-impact
     app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/version: "sha-a6d01f5fce0480142d76c5e7f699a38163eee3bb"
+    app.kubernetes.io/version: "sha-a316b8cace6a9b72c957ec6c1c87dd2d83fb8e32"
     app.kubernetes.io/component: collect
     mesure-impact/produit: sante-basavi
 spec:
@@ -151,7 +151,7 @@ spec:
             app.kubernetes.io/name: mesure-impact
             app.kubernetes.io/instance: mesure-impact
             app.kubernetes.io/managed-by: Helm
-            app.kubernetes.io/version: "sha-a6d01f5fce0480142d76c5e7f699a38163eee3bb"
+            app.kubernetes.io/version: "sha-a316b8cace6a9b72c957ec6c1c87dd2d83fb8e32"
             app.kubernetes.io/component: collect
             mesure-impact/produit: sante-basavi
         spec:
@@ -167,7 +167,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: collect
-              image: ghcr.io/socialgouv/mesure-impact-cron:sha-a6d01f5fce0480142d76c5e7f699a38163eee3bb
+              image: ghcr.io/socialgouv/mesure-impact-cron:sha-a316b8cace6a9b72c957ec6c1c87dd2d83fb8e32
               imagePullPolicy: IfNotPresent
               securityContext:
                 allowPrivilegeEscalation: false
@@ -209,6 +209,96 @@ spec:
               emptyDir: {}
 
 ---
+# Source: mesure-impact-dev/charts/mesure-impact/templates/cronjob.yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mesure-impact-sante-helios-collect
+  labels:
+    app.kubernetes.io/name: mesure-impact
+    app.kubernetes.io/instance: mesure-impact
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: "sha-a316b8cace6a9b72c957ec6c1c87dd2d83fb8e32"
+    app.kubernetes.io/component: collect
+    mesure-impact/produit: sante-helios
+spec:
+  schedule: "0 6 * * *"
+  timeZone: "Europe/Paris"
+  suspend: false
+  concurrencyPolicy: Forbid
+  # Sans cette borne, un contrôleur indisponible plusieurs heures accumule les
+  # démarrages manqués ; passé 100, le CronJob cesse définitivement d'être planifié.
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: mesure-impact
+            app.kubernetes.io/instance: mesure-impact
+            app.kubernetes.io/managed-by: Helm
+            app.kubernetes.io/version: "sha-a316b8cace6a9b72c957ec6c1c87dd2d83fb8e32"
+            app.kubernetes.io/component: collect
+            mesure-impact/produit: sante-helios
+        spec:
+          restartPolicy: OnFailure
+          # Aucun appel à l'API Kubernetes : pas de token de SA monté.
+          automountServiceAccountToken: false
+          securityContext:
+            fsGroup: 1000
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: collect
+              image: ghcr.io/socialgouv/mesure-impact-cron:sha-a316b8cace6a9b72c957ec6c1c87dd2d83fb8e32
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                  - ALL
+                readOnlyRootFilesystem: true
+              # Les deux seuls vrais secrets : tokens Matomo et Grist du produit.
+              envFrom:
+                - secretRef:
+                    name: mesure-impact-sante-helios-tokens
+              # Config non sensible : elle vient de produit.yaml, relisible en PR.
+              env:
+                - name: PRODUIT
+                  value: "sante/helios"
+                - name: ENVIRONMENT
+                  value: "dev"
+                - name: RUN_ID
+                  value: "helios"
+                - name: MATOMO_URL
+                  value: "https://matomo.fabrique.social.gouv.fr"
+                - name: MATOMO_SITE_ID
+                  value: "162"
+                - name: GRIST_URL
+                  value: "https://grist.numerique.gouv.fr"
+                - name: GRIST_DOC_ID
+                  value: "9vAxVCXu46T88ieM7s3NhF"
+              resources:
+                limits:
+                  memory: 512Mi
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}
+
+---
 # Source: mesure-impact-dev/charts/mesure-impact/templates/web.yaml
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -218,7 +308,7 @@ metadata:
     app.kubernetes.io/name: mesure-impact
     app.kubernetes.io/instance: mesure-impact
     app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/version: "sha-a6d01f5fce0480142d76c5e7f699a38163eee3bb"
+    app.kubernetes.io/version: "sha-a316b8cace6a9b72c957ec6c1c87dd2d83fb8e32"
     app.kubernetes.io/component: web
 spec:
   ingressClassName: nginx
@@ -248,7 +338,7 @@ metadata:
     app.kubernetes.io/name: mesure-impact
     app.kubernetes.io/instance: mesure-impact
     app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/version: "sha-a6d01f5fce0480142d76c5e7f699a38163eee3bb"
+    app.kubernetes.io/version: "sha-a316b8cace6a9b72c957ec6c1c87dd2d83fb8e32"
     prometheus/rules: infra
 spec:
   groups:
@@ -398,6 +488,41 @@ spec:
             summary: "Collecte mesure-impact-sante-basavi-collect n'est plus observable"
             description: >-
               Plus aucune métrique de planification pour mesure-impact-sante-basavi-collect, et il n'est pas
+              suspendu : CronJob supprimé, produit retiré du chart, kube-state-metrics
+              arrêté, ou schedule que ksm n'arrive pas à lire. Les deux autres alertes
+              sont aveugles dans cet état — elles testent des valeurs, celle-ci une présence.
+
+        # Garde-fou de dernier recours, un par produit de l'inventaire.
+        #
+        # Les deux règles ci-dessus testent des VALEURS. Aucune ne vérifie une PRÉSENCE :
+        # une série absente ne se distingue pas d'une série saine, et l'alerte reste verte
+        # sur une collecte morte. `kube_cronjob_next_schedule_time` disparaît pour toutes
+        # ces raisons à la fois — CronJob supprimé, produit retiré du chart,
+        # kube-state-metrics arrêté, `spec.timeZone` que ksm n'arrive pas à résoudre,
+        # schedule illisible. Aucune n'est exotique, et aucune ne serait vue.
+        #
+        # L'ancre est `kube_cronjob_spec_suspend` : c'est la seule métrique CronJob que
+        # ksm émette INCONDITIONNELLEMENT (internal/store/cronjob.go, aucun chemin
+        # d'erreur, stabilité STABLE). Elle répond donc à « ce CronJob existe-t-il, et
+        # est-il délibérément suspendu ? » quand plus rien d'autre ne répond.
+        #
+        # `min by` sur la clause de silence : taire demande le consensus des exportateurs.
+        - alert: MesureImpactCollecteNonObservable
+          expr: |
+            absent(kube_cronjob_next_schedule_time{namespace="mesure-impact-dev", cronjob="mesure-impact-sante-helios-collect"}) == 1
+            unless on (namespace, cronjob) (
+              min by (namespace, cronjob) (
+                kube_cronjob_spec_suspend{namespace="mesure-impact-dev", cronjob="mesure-impact-sante-helios-collect"}
+              ) == 1
+            )
+          for: 30m
+          labels:
+            severity: warning
+            environnement: "dev"
+          annotations:
+            summary: "Collecte mesure-impact-sante-helios-collect n'est plus observable"
+            description: >-
+              Plus aucune métrique de planification pour mesure-impact-sante-helios-collect, et il n'est pas
               suspendu : CronJob supprimé, produit retiré du chart, kube-state-metrics
               arrêté, ou schedule que ksm n'arrive pas à lire. Les deux autres alertes
               sont aveugles dans cet état — elles testent des valeurs, celle-ci une présence.
